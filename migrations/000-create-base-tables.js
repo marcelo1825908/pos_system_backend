@@ -72,6 +72,83 @@ module.exports = {
         console.log('mosque_payments table already exists, skipping');
       }
 
+      // Create categories table if it doesn't exist
+      const categoriesTableCheck = await db.query(`
+        SELECT table_name 
+        FROM information_schema.tables 
+        WHERE table_name = 'categories'
+      `);
+      
+      if (categoriesTableCheck.rows.length === 0) {
+        console.log('Creating categories table...');
+        await db.exec(`
+          CREATE TABLE categories (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(255) UNIQUE NOT NULL,
+            display_order INTEGER DEFAULT 0,
+            is_visible BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+        console.log('✅ categories table created');
+      } else {
+        console.log('categories table already exists, skipping');
+      }
+
+      // Create users table if it doesn't exist
+      const usersTableCheck = await db.query(`
+        SELECT table_name 
+        FROM information_schema.tables 
+        WHERE table_name = 'users'
+      `);
+      
+      if (usersTableCheck.rows.length === 0) {
+        console.log('Creating users table...');
+        await db.exec(`
+          CREATE TABLE users (
+            id SERIAL PRIMARY KEY,
+            username VARCHAR(255) UNIQUE NOT NULL,
+            password VARCHAR(255) NOT NULL,
+            role VARCHAR(255) DEFAULT 'employee',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+        console.log('✅ users table created');
+      } else {
+        console.log('users table already exists, skipping');
+      }
+
+      // Create products table if it doesn't exist
+      const productsTableCheck = await db.query(`
+        SELECT table_name 
+        FROM information_schema.tables 
+        WHERE table_name = 'products'
+      `);
+      
+      if (productsTableCheck.rows.length === 0) {
+        console.log('Creating products table...');
+        await db.exec(`
+          CREATE TABLE products (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            price DECIMAL(10, 2) NOT NULL,
+            category_id INTEGER,
+            barcode VARCHAR(255) UNIQUE,
+            stock_quantity INTEGER DEFAULT 0,
+            is_active BOOLEAN DEFAULT TRUE,
+            weight_enabled BOOLEAN DEFAULT FALSE,
+            weight_per_unit DECIMAL(10, 3) DEFAULT 0.000,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+        console.log('✅ products table created');
+      } else {
+        console.log('products table already exists, skipping');
+      }
+
       console.log('Migration 000-create-base-tables completed successfully');
     } catch (error) {
       console.error('Migration 000-create-base-tables failed:', error);
