@@ -452,14 +452,27 @@ const initializeDatabase = async () => {
       $$ language 'plpgsql';
     `);
 
-    // Create trigger for orders table
-    await exec(`
-      DROP TRIGGER IF EXISTS update_orders_timestamp ON orders;
-      CREATE TRIGGER update_orders_timestamp
-      BEFORE UPDATE ON orders
-      FOR EACH ROW
-      EXECUTE FUNCTION update_updated_at_column();
-    `);
+    // Create trigger for orders table (only if table exists)
+    try {
+      const ordersTableCheck = await query(`
+        SELECT table_name 
+        FROM information_schema.tables 
+        WHERE table_name = 'orders'
+      `);
+      
+      if (ordersTableCheck.rows.length > 0) {
+        await exec(`
+          DROP TRIGGER IF EXISTS update_orders_timestamp ON orders;
+          CREATE TRIGGER update_orders_timestamp
+          BEFORE UPDATE ON orders
+          FOR EACH ROW
+          EXECUTE FUNCTION update_updated_at_column();
+        `);
+      }
+    } catch (err) {
+      // Orders table doesn't exist yet, skip trigger creation
+      // This is OK - migrations will create it later
+    }
 
     // Insert default admin user if no users exist
     const userCount = await get('SELECT COUNT(*) as count FROM users');
