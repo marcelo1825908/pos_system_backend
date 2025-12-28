@@ -1,0 +1,13 @@
+{
+  "mode": "demo",
+  "baseUrl": "https://demo-api.vivapayments.com",
+  "currencyCode": 978,
+  "merchantIdForAuth": "732ee684-7180-4513-a350-4621ca2b5b67",
+  "apiKey": "",
+  "basicAuthToken": "",
+  "bearerToken": "",
+  "accountsBaseUrl": "https://demo-accounts.vivapayments.com",
+  "clientId": "2w8ohjz6jrlf242joprhg54bjvtr24awt9pcwzyx5ocs3.apps.vivapayments.com",
+  "clientSecret": "6M0kk0n5Y3TJHd6RZ558RVaOuq1yvJ",
+  "scope": "urn:viva:payments:core-api"
+}
