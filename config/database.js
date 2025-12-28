@@ -669,12 +669,44 @@ const initializeDatabase = async () => {
     }
 
     // Insert default admin user if no users exist
-    const userCount = await get('SELECT COUNT(*) as count FROM users');
-    if (parseInt(userCount.count) === 0) {
-      await run(`
-        INSERT INTO users (name, pincode, social_security, identification, role, avatar_color)
-        VALUES ($1, $2, $3, $4, $5, $6)
-      `, ['Super Admin', '1234', '', '', 'Super Admin', '#ef4444']);
+    try {
+      const usersTableCheck = await query(`
+        SELECT table_name 
+        FROM information_schema.tables 
+        WHERE table_name = 'users'
+      `);
+      
+      if (usersTableCheck.rows.length > 0) {
+        const userCount = await get('SELECT COUNT(*) as count FROM users');
+        if (parseInt(userCount.count) === 0) {
+          // Check what columns exist in users table
+          const columns = await query(`
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name = 'users'
+          `);
+          const columnNames = columns.rows.map(row => row.column_name);
+          
+          // Use the correct columns based on what exists
+          if (columnNames.includes('username') && columnNames.includes('password')) {
+            await run(`
+              INSERT INTO users (username, password, role)
+              VALUES ($1, $2, $3)
+            `, ['admin', 'admin123', 'admin']);
+            console.log('✅ Default admin user created');
+          } else if (columnNames.includes('name')) {
+            // Legacy format
+            await run(`
+              INSERT INTO users (name, pincode, social_security, identification, role, avatar_color)
+              VALUES ($1, $2, $3, $4, $5, $6)
+            `, ['Super Admin', '1234', '', '', 'Super Admin', '#ef4444']);
+            console.log('✅ Default admin user created (legacy format)');
+          }
+        }
+      }
+    } catch (err) {
+      // Users table might not exist yet or insert failed - that's OK
+      console.log('Note: Could not create default admin user (this is OK if users table structure differs)');
     }
 
     console.log('✅ Database schema initialized successfully');
