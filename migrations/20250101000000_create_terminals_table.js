@@ -37,9 +37,19 @@ module.exports = {
       }
     }
 
-    // Create index on device_id for faster lookups
+    // Create index on device_id for faster lookups (only if orders table exists)
     try {
-      await db.exec(`CREATE INDEX IF NOT EXISTS idx_orders_device_id ON orders(device_id)`);
+      const ordersTableCheck = await db.query(`
+        SELECT table_name 
+        FROM information_schema.tables 
+        WHERE table_name = 'orders'
+      `);
+      
+      if (ordersTableCheck.rows.length > 0) {
+        await db.exec(`CREATE INDEX IF NOT EXISTS idx_orders_device_id ON orders(device_id)`);
+      } else {
+        console.log('⚠️ orders table does not exist yet, skipping index creation');
+      }
     } catch (err) {
       console.log('Note: Index may already exist');
     }

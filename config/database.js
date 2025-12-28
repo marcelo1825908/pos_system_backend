@@ -225,76 +225,218 @@ const initializeDatabase = async () => {
       )
     `);
 
-    // Create pr_table table
-    await exec(`
-      CREATE TABLE IF NOT EXISTS pr_table (
-        id SERIAL PRIMARY KEY,
-        table_no VARCHAR(255) NOT NULL,
-        room_id INTEGER,
-        order_id INTEGER,
-        status VARCHAR(255) DEFAULT 'available',
-        description TEXT,
-        customer_name VARCHAR(255),
-        waiter_name VARCHAR(255),
-        table_size INTEGER,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY(room_id) REFERENCES rooms(id) ON DELETE SET NULL,
-        FOREIGN KEY(order_id) REFERENCES orders(id) ON DELETE SET NULL
-      )
+    // Create pr_table table (without foreign keys first to avoid circular dependency)
+    const prTableCheck = await query(`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_name = 'pr_table'
     `);
+    
+    if (prTableCheck.rows.length === 0) {
+      await exec(`
+        CREATE TABLE pr_table (
+          id SERIAL PRIMARY KEY,
+          table_no VARCHAR(255) NOT NULL,
+          room_id INTEGER,
+          order_id INTEGER,
+          status VARCHAR(255) DEFAULT 'available',
+          description TEXT,
+          customer_name VARCHAR(255),
+          waiter_name VARCHAR(255),
+          table_size INTEGER,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+    }
 
-    // Create orders table
-    await exec(`
-      CREATE TABLE IF NOT EXISTS orders (
-        id SERIAL PRIMARY KEY,
-        tax DECIMAL(10, 2) DEFAULT 0,
-        status VARCHAR(255) DEFAULT 'pending',
-        note TEXT,
-        gross_total DECIMAL(10, 2) DEFAULT 0,
-        net_total DECIMAL(10, 2) DEFAULT 0,
-        discount DECIMAL(10, 2) DEFAULT 0,
-        table_id INTEGER,
-        order_no VARCHAR(255),
-        order_type VARCHAR(255) DEFAULT 'horeca',
-        device_id VARCHAR(255),
-        employee_id INTEGER,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        completed_at TIMESTAMP,
-        FOREIGN KEY(table_id) REFERENCES pr_table(id) ON DELETE SET NULL
-      )
+    // Create orders table (without foreign keys first to avoid circular dependency)
+    const ordersTableCheck = await query(`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_name = 'orders'
     `);
+    
+    if (ordersTableCheck.rows.length === 0) {
+      await exec(`
+        CREATE TABLE orders (
+          id SERIAL PRIMARY KEY,
+          tax DECIMAL(10, 2) DEFAULT 0,
+          status VARCHAR(255) DEFAULT 'pending',
+          note TEXT,
+          gross_total DECIMAL(10, 2) DEFAULT 0,
+          net_total DECIMAL(10, 2) DEFAULT 0,
+          discount DECIMAL(10, 2) DEFAULT 0,
+          table_id INTEGER,
+          order_no VARCHAR(255),
+          order_type VARCHAR(255) DEFAULT 'horeca',
+          device_id VARCHAR(255),
+          employee_id INTEGER,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          completed_at TIMESTAMP
+        )
+      `);
+    }
 
-    // Create order_details table
-    await exec(`
-      CREATE TABLE IF NOT EXISTS order_details (
-        id SERIAL PRIMARY KEY,
-        order_id INTEGER NOT NULL,
-        product_id INTEGER NOT NULL,
-        qty DECIMAL(10, 2) DEFAULT 0,
-        total DECIMAL(10, 2) DEFAULT 0,
-        notes TEXT,
-        discount DECIMAL(10, 2) DEFAULT 0,
-        weight DECIMAL(10, 2) DEFAULT 0,
-        weight_unit VARCHAR(10) DEFAULT 'kg',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY(order_id) REFERENCES orders(id) ON DELETE CASCADE,
-        FOREIGN KEY(product_id) REFERENCES products(id)
-      )
-    `);
+    // Add foreign keys after both tables exist (handle circular dependency)
+    try {
+      // Check if foreign key constraints already exist
+      const fkCheck1 = await query(`
+        SELECT constraint_name 
+        FROM information_schema.table_constraints 
+        WHERE table_name = 'pr_table' AND constraint_type = 'FOREIGN KEY' AND constraint_name LIKE '%order_id%'
+      `);
+      
+      if (fkCheck1.rows.length === 0 && ordersTableCheck.rows.length > 0) {
+        await exec(`
+          ALTER TABLE pr_table 
+          ADD CONSTRAINT fk_pr_table_order_id 
+          FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE SET NULL
+        `);
+      }
+      
+      const fkCheck2 = await query(`
+        SELECT constraint_name 
+        FROM information_schema.table_constraints 
+        WHERE table_name = 'pr_table' AND constraint_type = 'FOREIGN KEY' AND constraint_name LIKE '%room_id%'
+      `);
+      
+      if (fkCheck2.rows.length === 0) {
+        const roomsCheck = await query(`
+          SELECT table_name 
+          FROM information_schema.tables 
+          WHERE table_name = 'rooms'
+        `);
+        
+        if (roomsCheck.rows.length > 0) {
+          await exec(`
+            ALTER TABLE pr_table 
+            ADD CONSTRAINT fk_pr_table_room_id 
+            FOREIGN KEY (room_id) REFERENCES rooms(id) ON DELETE SET NULL
+          `);
+        }
+      }
+      
+      const fkCheck3 = await query(`
+        SELECT constraint_name 
+        FROM information_schema.table_constraints 
+        WHERE table_name = 'orders' AND constraint_type = 'FOREIGN KEY' AND constraint_name LIKE '%table_id%'
+      `);
+      
+      if (fkCheck3.rows.length === 0 && prTableCheck.rows.length > 0) {
+        await exec(`
+          ALTER TABLE orders 
+          ADD CONSTRAINT fk_orders_table_id 
+          FOREIGN KEY (table_id) REFERENCES pr_table(id) ON DELETE SET NULL
+        `);
+      }
+    } catch (err) {
+      // Foreign keys might already exist or tables don't exist yet - that's OK
+      // Migrations will handle proper table creation
+    }
 
-    // Create product_sub_products junction table
-    await exec(`
-      CREATE TABLE IF NOT EXISTS product_sub_products (
-        id SERIAL PRIMARY KEY,
-        product_id INTEGER NOT NULL,
-        sub_product_id INTEGER NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE CASCADE,
-        FOREIGN KEY(sub_product_id) REFERENCES sub_products(id) ON DELETE CASCADE,
-        UNIQUE(product_id, sub_product_id)
-      )
+    // Create order_details table (without foreign keys first)
+    const orderDetailsCheck = await query(`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_name = 'order_details'
     `);
+    
+    if (orderDetailsCheck.rows.length === 0) {
+      await exec(`
+        CREATE TABLE order_details (
+          id SERIAL PRIMARY KEY,
+          order_id INTEGER NOT NULL,
+          product_id INTEGER NOT NULL,
+          qty DECIMAL(10, 2) DEFAULT 0,
+          total DECIMAL(10, 2) DEFAULT 0,
+          notes TEXT,
+          discount DECIMAL(10, 2) DEFAULT 0,
+          weight DECIMAL(10, 2) DEFAULT 0,
+          weight_unit VARCHAR(10) DEFAULT 'kg',
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      
+      // Add foreign keys after tables exist
+      try {
+        if (ordersTableCheck.rows.length > 0) {
+          await exec(`
+            ALTER TABLE order_details 
+            ADD CONSTRAINT fk_order_details_order_id 
+            FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
+          `);
+        }
+        
+        const productsCheck = await query(`
+          SELECT table_name 
+          FROM information_schema.tables 
+          WHERE table_name = 'products'
+        `);
+        
+        if (productsCheck.rows.length > 0) {
+          await exec(`
+            ALTER TABLE order_details 
+            ADD CONSTRAINT fk_order_details_product_id 
+            FOREIGN KEY (product_id) REFERENCES products(id)
+          `);
+        }
+      } catch (err) {
+        // Foreign keys might already exist - that's OK
+      }
+    }
+
+    // Create product_sub_products junction table (without foreign keys first)
+    const productSubProductsCheck = await query(`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_name = 'product_sub_products'
+    `);
+    
+    if (productSubProductsCheck.rows.length === 0) {
+      await exec(`
+        CREATE TABLE product_sub_products (
+          id SERIAL PRIMARY KEY,
+          product_id INTEGER NOT NULL,
+          sub_product_id INTEGER NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(product_id, sub_product_id)
+        )
+      `);
+      
+      // Add foreign keys after tables exist
+      try {
+        const productsCheck = await query(`
+          SELECT table_name 
+          FROM information_schema.tables 
+          WHERE table_name = 'products'
+        `);
+        
+        const subProductsCheck = await query(`
+          SELECT table_name 
+          FROM information_schema.tables 
+          WHERE table_name = 'sub_products'
+        `);
+        
+        if (productsCheck.rows.length > 0) {
+          await exec(`
+            ALTER TABLE product_sub_products 
+            ADD CONSTRAINT fk_product_sub_products_product_id 
+            FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+          `);
+        }
+        
+        if (subProductsCheck.rows.length > 0) {
+          await exec(`
+            ALTER TABLE product_sub_products 
+            ADD CONSTRAINT fk_product_sub_products_sub_product_id 
+            FOREIGN KEY (sub_product_id) REFERENCES sub_products(id) ON DELETE CASCADE
+          `);
+        }
+      } catch (err) {
+        // Foreign keys might already exist - that's OK
+      }
+    }
 
     // Create printers table
     await exec(`
@@ -322,33 +464,85 @@ const initializeDatabase = async () => {
       )
     `);
 
-    // Create inventory table
-    await exec(`
-      CREATE TABLE IF NOT EXISTS inventory (
-        id SERIAL PRIMARY KEY,
-        product_id INTEGER NOT NULL,
-        qty DECIMAL(10, 2) DEFAULT 0,
-        FOREIGN KEY(product_id) REFERENCES products(id)
-      )
+    // Create inventory table (without foreign keys first)
+    const inventoryCheck = await query(`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_name = 'inventory'
     `);
+    
+    if (inventoryCheck.rows.length === 0) {
+      await exec(`
+        CREATE TABLE inventory (
+          id SERIAL PRIMARY KEY,
+          product_id INTEGER NOT NULL,
+          qty DECIMAL(10, 2) DEFAULT 0
+        )
+      `);
+      
+      // Add foreign key after products table exists
+      try {
+        const productsCheck = await query(`
+          SELECT table_name 
+          FROM information_schema.tables 
+          WHERE table_name = 'products'
+        `);
+        
+        if (productsCheck.rows.length > 0) {
+          await exec(`
+            ALTER TABLE inventory 
+            ADD CONSTRAINT fk_inventory_product_id 
+            FOREIGN KEY (product_id) REFERENCES products(id)
+          `);
+        }
+      } catch (err) {
+        // Foreign key might already exist - that's OK
+      }
+    }
 
-    // Create promotions table
-    await exec(`
-      CREATE TABLE IF NOT EXISTS promotions (
-        id SERIAL PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        description TEXT,
-        product_id INTEGER,
-        discount_type VARCHAR(255) NOT NULL DEFAULT 'percentage',
-        discount_value DECIMAL(10, 2) NOT NULL DEFAULT 0,
-        start_date TIMESTAMP,
-        end_date TIMESTAMP,
-        is_active INTEGER DEFAULT 1,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
-      )
+    // Create promotions table (without foreign keys first)
+    const promotionsCheck = await query(`
+      SELECT table_name 
+      FROM information_schema.tables 
+      WHERE table_name = 'promotions'
     `);
+    
+    if (promotionsCheck.rows.length === 0) {
+      await exec(`
+        CREATE TABLE promotions (
+          id SERIAL PRIMARY KEY,
+          name VARCHAR(255) NOT NULL,
+          description TEXT,
+          product_id INTEGER,
+          discount_type VARCHAR(255) NOT NULL DEFAULT 'percentage',
+          discount_value DECIMAL(10, 2) NOT NULL DEFAULT 0,
+          start_date TIMESTAMP,
+          end_date TIMESTAMP,
+          is_active INTEGER DEFAULT 1,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      
+      // Add foreign key after products table exists
+      try {
+        const productsCheck = await query(`
+          SELECT table_name 
+          FROM information_schema.tables 
+          WHERE table_name = 'products'
+        `);
+        
+        if (productsCheck.rows.length > 0) {
+          await exec(`
+            ALTER TABLE promotions 
+            ADD CONSTRAINT fk_promotions_product_id 
+            FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+          `);
+        }
+      } catch (err) {
+        // Foreign key might already exist - that's OK
+      }
+    }
 
     // Create z_reports table (for backward compatibility)
     await exec(`
