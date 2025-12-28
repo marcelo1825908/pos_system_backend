@@ -9,17 +9,8 @@
     "start": "node server.js",
     "migrate": "node migrate.js",
     "setup:env": "node create-env.js",
-    "seed": "node seeder.js",
-    "seed:terminals": "node seed-terminals.js",
-    "test:terminals": "node test-payment-terminals.js",
-    "test:cashmatic": "node test-payment-terminals.js cashmatic",
-    "test:payworld": "node test-payment-terminals.js payworld",
-    "test:terminals:db": "node test-terminals-from-db.js",
-    "test:terminals:db:all": "node test-terminals-from-db.js",
-    "test:terminals:db:cashmatic": "node test-terminals-from-db.js cashmatic",
-    "test:terminals:db:payworld": "node test-terminals-from-db.js payworld",
-    "build": "echo 'No build step required for Node.js server'",
-    "test": "echo 'No tests specified'"
+    "seed": "node seed.js",
+    "build": "echo 'No build step required for Node.js server'"
   },
   "dependencies": {
     "axios": "^1.7.9",

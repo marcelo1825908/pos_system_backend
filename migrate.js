@@ -4,7 +4,75 @@ const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '../../.env') });
 
 const db = require('./config/database');
+const { Pool } = require('pg');
 const fs = require('fs');
+
+// Helper function to create database if it doesn't exist
+async function ensureDatabaseExists() {
+  // Parse connection info
+  let adminConfig;
+  if (process.env.DATABASE_URL) {
+    const url = new URL(process.env.DATABASE_URL);
+    const dbName = url.pathname.slice(1);
+    // Connect to 'postgres' database to create the target database
+    adminConfig = {
+      host: url.hostname,
+      port: parseInt(url.port) || 5432,
+      database: 'postgres', // Connect to default postgres database
+      user: url.username,
+      password: url.password,
+      ssl: process.env.DATABASE_URL.includes('sslmode=require') || process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+    };
+    const targetDbName = dbName;
+    
+    const adminPool = new Pool(adminConfig);
+    try {
+      // Check if database exists
+      const result = await adminPool.query(
+        'SELECT 1 FROM pg_database WHERE datname = $1',
+        [targetDbName]
+      );
+      
+      if (result.rows.length === 0) {
+        console.log(`📦 Creating database "${targetDbName}"...`);
+        await adminPool.query(`CREATE DATABASE "${targetDbName}"`);
+        console.log(`✅ Database "${targetDbName}" created successfully`);
+      } else {
+        console.log(`✅ Database "${targetDbName}" already exists`);
+      }
+    } finally {
+      await adminPool.end();
+    }
+  } else {
+    const dbName = process.env.DB_NAME || 'pos_desktop';
+    adminConfig = {
+      host: process.env.DB_HOST || 'localhost',
+      port: parseInt(process.env.DB_PORT) || 5432,
+      database: 'postgres', // Connect to default postgres database
+      user: process.env.DB_USER || 'postgres',
+      password: process.env.DB_PASSWORD || 'postgres',
+    };
+    
+    const adminPool = new Pool(adminConfig);
+    try {
+      // Check if database exists
+      const result = await adminPool.query(
+        'SELECT 1 FROM pg_database WHERE datname = $1',
+        [dbName]
+      );
+      
+      if (result.rows.length === 0) {
+        console.log(`📦 Creating database "${dbName}"...`);
+        await adminPool.query(`CREATE DATABASE "${dbName}"`);
+        console.log(`✅ Database "${dbName}" created successfully`);
+      } else {
+        console.log(`✅ Database "${dbName}" already exists`);
+      }
+    } finally {
+      await adminPool.end();
+    }
+  }
+}
 
 // Create migrations tracking table
 async function initializeMigrationsTable() {
@@ -31,6 +99,15 @@ async function markMigrationExecuted(name) {
 // Run all pending migrations
 async function runMigrations() {
   console.log('🔄 Checking for pending migrations...');
+  
+  // Ensure database exists before running migrations
+  try {
+    await ensureDatabaseExists();
+  } catch (error) {
+    // If we can't create the database, try to continue anyway
+    // (database might already exist or we might not have permissions)
+    console.log('⚠️  Could not ensure database exists, continuing anyway...');
+  }
   
   // Initialize migrations table
   await initializeMigrationsTable();
@@ -117,6 +194,18 @@ if (require.main === module) {
         console.error('\n3. Make sure PostgreSQL is installed and running');
         console.error('4. Create the database: CREATE DATABASE pos_desktop;');
         console.error('\nSee packages/server/POSTGRESQL_SETUP.md for detailed instructions.\n');
+      } else if (error.code === '3D000' || error.message.includes('does not exist')) {
+        console.error('\n❌ Database does not exist');
+        console.error('\nThe database needs to be created first.');
+        if (process.env.DATABASE_URL) {
+          console.error('Railway/Heroku: The database should be created automatically by your hosting provider.');
+          console.error('If this error persists, check your DATABASE_URL environment variable.');
+        } else {
+          console.error('\nTo create the database:');
+          console.error('1. Connect to PostgreSQL: psql -U postgres');
+          console.error(`2. Run: CREATE DATABASE ${process.env.DB_NAME || 'pos_desktop'};`);
+        }
+        console.error('\nError details:', error.message);
       } else if (error.code === 'ECONNRESET' || error.message.includes('ECONNRESET')) {
         console.error('\n❌ Database connection was reset');
         console.error('This might happen if:');

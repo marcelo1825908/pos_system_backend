@@ -5,19 +5,40 @@ require('dotenv').config({ path: path.join(__dirname, '../../../.env') });
 
 const { Pool } = require('pg');
 
+// Parse DATABASE_URL if provided (Railway, Heroku, etc.)
+let poolConfig;
+if (process.env.DATABASE_URL) {
+  // Parse DATABASE_URL format: postgresql://user:password@host:port/database
+  const url = new URL(process.env.DATABASE_URL);
+  poolConfig = {
+    host: url.hostname,
+    port: parseInt(url.port) || 5432,
+    database: url.pathname.slice(1), // Remove leading '/'
+    user: url.username,
+    password: url.password,
+    ssl: process.env.DATABASE_URL.includes('sslmode=require') || process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+    max: 20,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 2000,
+    allowExitOnIdle: false,
+  };
+} else {
+  // Use individual environment variables
+  poolConfig = {
+    host: process.env.DB_HOST || 'localhost',
+    port: parseInt(process.env.DB_PORT) || 5432,
+    database: process.env.DB_NAME || 'pos_desktop',
+    user: process.env.DB_USER || 'postgres',
+    password: process.env.DB_PASSWORD || 'postgres',
+    max: 20,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 2000,
+    allowExitOnIdle: false,
+  };
+}
+
 // PostgreSQL connection configuration
-const pool = new Pool({
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT) || 5432,
-  database: process.env.DB_NAME || 'pos_desktop',
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || 'postgres',
-  max: 20, // Maximum number of clients in the pool
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
-  // Don't crash on connection errors - handle them gracefully
-  allowExitOnIdle: false,
-});
+const pool = new Pool(poolConfig);
 
 // Test connection
 pool.on('connect', () => {
