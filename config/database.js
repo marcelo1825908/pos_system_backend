@@ -677,36 +677,48 @@ const initializeDatabase = async () => {
       `);
       
       if (usersTableCheck.rows.length > 0) {
+        // Check what columns exist in users table
+        const columns = await query(`
+          SELECT column_name 
+          FROM information_schema.columns 
+          WHERE table_name = 'users'
+        `);
+        const columnNames = columns.rows.map(row => row.column_name);
+        
         const userCount = await get('SELECT COUNT(*) as count FROM users');
         if (parseInt(userCount.count) === 0) {
-          // Check what columns exist in users table
-          const columns = await query(`
-            SELECT column_name 
-            FROM information_schema.columns 
-            WHERE table_name = 'users'
-          `);
-          const columnNames = columns.rows.map(row => row.column_name);
-          
           // Use the correct columns based on what exists
+          // Prefer new schema (username/password) over legacy (name/pincode)
           if (columnNames.includes('username') && columnNames.includes('password')) {
-            await run(`
-              INSERT INTO users (username, password, role)
-              VALUES ($1, $2, $3)
-            `, ['admin', 'admin123', 'admin']);
-            console.log('✅ Default admin user created');
-          } else if (columnNames.includes('name')) {
-            // Legacy format
-            await run(`
-              INSERT INTO users (name, pincode, social_security, identification, role, avatar_color)
-              VALUES ($1, $2, $3, $4, $5, $6)
-            `, ['Super Admin', '1234', '', '', 'Super Admin', '#ef4444']);
-            console.log('✅ Default admin user created (legacy format)');
+            try {
+              await run(`
+                INSERT INTO users (username, password, role)
+                VALUES ($1, $2, $3)
+              `, ['admin', 'admin123', 'admin']);
+              console.log('✅ Default admin user created');
+            } catch (insertErr) {
+              console.log('Note: Could not create default admin user:', insertErr.message);
+            }
+          } else if (columnNames.includes('name') && columnNames.includes('pincode')) {
+            // Legacy format - only use if new format columns don't exist
+            try {
+              await run(`
+                INSERT INTO users (name, pincode, social_security, identification, role, avatar_color)
+                VALUES ($1, $2, $3, $4, $5, $6)
+              `, ['Super Admin', '1234', '', '', 'Super Admin', '#ef4444']);
+              console.log('✅ Default admin user created (legacy format)');
+            } catch (insertErr) {
+              console.log('Note: Could not create default admin user (legacy format):', insertErr.message);
+            }
+          } else {
+            console.log('⚠️ Users table exists but structure is unknown, skipping default user creation');
+            console.log('Available columns:', columnNames.join(', '));
           }
         }
       }
     } catch (err) {
       // Users table might not exist yet or insert failed - that's OK
-      console.log('Note: Could not create default admin user (this is OK if users table structure differs)');
+      console.log('Note: Could not create default admin user (this is OK if users table structure differs):', err.message);
     }
 
     console.log('✅ Database schema initialized successfully');
