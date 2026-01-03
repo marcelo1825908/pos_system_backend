@@ -189,7 +189,13 @@ class PaymentService {
       
       // Get Cashmatic terminal configuration
       const terminal = await PaymentTerminal.getByType('cashmatic');
-      console.log(`🔍 Cashmatic terminal lookup:`, terminal ? { id: terminal.id, name: terminal.name, enabled: terminal.enabled, type: terminal.type } : 'NOT FOUND');
+      console.log(`🔍 Cashmatic terminal lookup:`, terminal ? { 
+        id: terminal.id, 
+        name: terminal.name, 
+        enabled: terminal.enabled, 
+        type: terminal.type,
+        connection_string: terminal.connection_string ? (typeof terminal.connection_string === 'string' ? terminal.connection_string.substring(0, 100) + '...' : JSON.stringify(terminal.connection_string).substring(0, 100) + '...') : 'MISSING'
+      } : 'NOT FOUND');
       
       // If terminal is configured and enabled, use real implementation
       if (terminal && terminal.enabled) {

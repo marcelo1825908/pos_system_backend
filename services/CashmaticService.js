@@ -796,26 +796,33 @@ function createCashmaticService(terminal) {
 
   // Parse connection_string
   let config = {};
+  console.log('🔍 Parsing connection_string. Type:', typeof terminal.connection_string, 'Value:', terminal.connection_string);
+  
   try {
     const connectionString = terminal.connection_string;
     
     if (typeof connectionString === 'string') {
       try {
         config = JSON.parse(connectionString);
+        console.log('✅ Parsed JSON config:', config);
       } catch (e) {
+        console.log('⚠️ Not JSON, trying other formats. Error:', e.message);
         // If not JSON, try to parse TCP format
         if (connectionString && connectionString.startsWith('tcp://')) {
           const match = connectionString.match(/tcp:\/\/([^:]+):?(\d+)?/);
           if (match) {
             config = { ip: match[1], port: match[2] || '' };
+            console.log('✅ Parsed TCP format:', config);
           }
         } else if (connectionString.trim() !== '') {
           // If it's a non-empty string but not JSON or TCP format, try to use it as IP
           config = { ip: connectionString.trim() };
+          console.log('✅ Using as IP:', config);
         }
       }
     } else if (connectionString && typeof connectionString === 'object') {
       config = connectionString;
+      console.log('✅ Using object config:', config);
     }
 
     // Extract fields with multiple name variations (case-insensitive)
@@ -834,13 +841,19 @@ function createCashmaticService(terminal) {
       return '';
     };
 
+    const extractedIp = getConfigValue('ip', 'ipAddress', 'ip_address', 'IP', 'IPAddress');
+    const extractedUsername = getConfigValue('username', 'userName', 'user_name', 'Username', 'USERNAME');
+    const extractedPassword = getConfigValue('password', 'Password', 'PASSWORD');
+    
+    console.log('🔍 Extracted values - IP:', extractedIp, 'Username:', extractedUsername, 'Password:', extractedPassword ? '***' : 'NOT FOUND');
+
     const serviceConfig = {
-      ip: getConfigValue('ip', 'ipAddress', 'ip_address', 'IP', 'IPAddress') || '192.168.1.58',
-      username: getConfigValue('username', 'userName', 'user_name', 'Username', 'USERNAME') || 'cp',
-      password: getConfigValue('password', 'Password', 'PASSWORD') || '1235',
+      ip: extractedIp || '192.168.1.58',
+      username: extractedUsername || 'cp',
+      password: extractedPassword || '1235',
     };
 
-    console.log('Creating CashmaticService with config:', { ...serviceConfig, password: '***' });
+    console.log('✅ Creating CashmaticService with config:', { ...serviceConfig, password: '***' });
     return new CashmaticServiceInstance(serviceConfig);
   } catch (error) {
     console.error('Error parsing terminal connection_string:', error, 'Terminal:', terminal);
