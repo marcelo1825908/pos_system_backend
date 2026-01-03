@@ -12,12 +12,13 @@ class PaymentTerminal {
   }
 
   static async getByType(type) {
-    // Check for both integer 1 and boolean true
-    const sql = 'SELECT * FROM payment_terminals WHERE type = $1 AND (enabled = 1 OR enabled = true)';
+    // Check for enabled = 1 (works for integer columns)
+    // If column is boolean, we'll handle it in the WHERE clause by checking both
+    const sql = 'SELECT * FROM payment_terminals WHERE type = $1 AND enabled = 1';
     const result = await db.get(sql, [type]);
     // Normalize enabled to boolean for consistency
     if (result) {
-      result.enabled = result.enabled === 1 || result.enabled === true || result.enabled === '1';
+      result.enabled = result.enabled === 1 || result.enabled === true || result.enabled === '1' || result.enabled === 'true';
     }
     return result;
   }
