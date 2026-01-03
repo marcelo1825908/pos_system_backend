@@ -39,31 +39,41 @@ class CashmaticService {
     const baseUrl = this.getBaseUrl();
     const cfg = readConfig();
     console.log("inside the Login ");
-    const res = await client.post(`${baseUrl}/api/user/Login`, {
-      username: cfg.username || 'cp',
-      password: cfg.password || '1235',
-    });
+    try {
+      const res = await client.post(`${baseUrl}/api/user/Login`, {
+        username: cfg.username || 'cp',
+        password: cfg.password || '1235',
+      });
 
-    const data = res.data || {};
-    console.log('Cashmatic login response raw:', data);
+      const data = res.data || {};
+      console.log('Cashmatic login response raw:', data);
 
-    const token =
-      data.token ||
-      data.accessToken ||
-      data.jwt ||
-      data.bearer ||
-      data.Token ||
-      (data.data && (data.data.token || data.data.accessToken || data.data.jwt)) ||
-      (typeof data === 'string' ? data : null);
+      const token =
+        data.token ||
+        data.accessToken ||
+        data.jwt ||
+        data.bearer ||
+        data.Token ||
+        (data.data && (data.data.token || data.data.accessToken || data.data.jwt)) ||
+        (typeof data === 'string' ? data : null);
 
-    if (!token) {
-      const keys = Object.keys(data || {});
-      throw new Error(
-        `No token in Cashmatic login response. Got keys: [${keys.join(', ')}]`
-      );
+      if (!token) {
+        const keys = Object.keys(data || {});
+        throw new Error(
+          `No token in Cashmatic login response. Got keys: [${keys.join(', ')}]`
+        );
+      }
+
+      return token;
+    } catch (error) {
+      // Enhance error message with connection details
+      if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT' || error.code === 'ENOTFOUND') {
+        throw new Error(`Cannot connect to Cashmatic device at ${baseUrl}. Please check if the device is powered on and connected to the network. Original error: ${error.message}`);
+      } else if (error.response) {
+        throw new Error(`Cashmatic login failed: ${error.response.status} ${error.response.statusText || error.message}`);
+      }
+      throw error;
     }
-
-    return token;
   }
 
   static async startPayment(amountInCents) {
@@ -81,11 +91,21 @@ class CashmaticService {
       queueAllowed: false,
     };
 
-    await client.post(`${baseUrl}/api/transaction/StartPayment`, body, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
+    try {
+      await client.post(`${baseUrl}/api/transaction/StartPayment`, body, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+    } catch (error) {
+      // Enhance error message for StartPayment
+      if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT' || error.code === 'ENOTFOUND') {
+        throw new Error(`Cannot connect to Cashmatic device at ${baseUrl} to start payment. Please check if the device is powered on and connected to the network. Original error: ${error.message}`);
+      } else if (error.response) {
+        throw new Error(`Failed to start Cashmatic payment: ${error.response.status} ${error.response.statusText || error.message}`);
+      }
+      throw error;
+    }
     console.log("api/transcation/startPayment", body, " Base URL : ", baseUrl, " Token : ", token);
     const sessionId = generateSessionId();
     sessions.set(sessionId, {
@@ -497,4 +517,342 @@ class CashmaticService {
   }
 }
 
+// Instance-based service for dynamic terminal configuration
+class CashmaticServiceInstance {
+  constructor(config) {
+    this.config = config || {};
+    this.sessions = new Map();
+  }
+
+  getConfiguredIp() {
+    return this.config.ip || '192.168.1.58';
+  }
+
+  getBaseUrl() {
+    const ip = this.getConfiguredIp();
+    return `https://${ip}:50301`;
+  }
+
+  getHttpClient() {
+    const httpsAgent = new https.Agent({
+      rejectUnauthorized: false, // self-signed certificate on Cashmatic
+    });
+
+    return axios.create({
+      httpsAgent,
+      timeout: 3000, // Reduced timeout to fail faster
+    });
+  }
+
+  async login() {
+    const client = this.getHttpClient();
+    const baseUrl = this.getBaseUrl();
+    console.log("inside the Login with config:", { ip: this.config.ip, username: this.config.username });
+    try {
+      const res = await client.post(`${baseUrl}/api/user/Login`, {
+        username: this.config.username || 'cp',
+        password: this.config.password || '1235',
+      }, {
+        timeout: 3000, // Explicit timeout for this request
+      });
+
+      const data = res.data || {};
+      console.log('Cashmatic login response raw:', data);
+
+      const token =
+        data.token ||
+        data.accessToken ||
+        data.jwt ||
+        data.bearer ||
+        data.Token ||
+        (data.data && (data.data.token || data.data.accessToken || data.data.jwt)) ||
+        (typeof data === 'string' ? data : null);
+
+      if (!token) {
+        const keys = Object.keys(data || {});
+        throw new Error(
+          `No token in Cashmatic login response. Got keys: [${keys.join(', ')}]`
+        );
+      }
+
+      return token;
+    } catch (error) {
+      // Enhance error message with connection details
+      if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT' || error.code === 'ENOTFOUND' || error.message.includes('timeout')) {
+        const errorMsg = `Cannot connect to Cashmatic device at ${baseUrl}. Please check if the device is powered on and connected to the network.`;
+        console.error(errorMsg, error.message);
+        throw new Error(errorMsg);
+      } else if (error.response) {
+        throw new Error(`Cashmatic login failed: ${error.response.status} ${error.response.statusText || error.message}`);
+      }
+      throw error;
+    }
+  }
+
+  async createSession(amountInCents) {
+    console.log("inside createSession Amount in Cents is ", amountInCents);
+
+    try {
+      const token = await this.login();
+      const client = this.getHttpClient();
+      const baseUrl = this.getBaseUrl();
+      console.log("Token", token, "client : ", client, " Base Url ", baseUrl);
+
+      const body = {
+        reason: 'POS payment',
+        reference: `POS-${Date.now()}`,
+        amount: amountInCents,
+        queueAllowed: false,
+      };
+
+      try {
+        await client.post(`${baseUrl}/api/transaction/StartPayment`, body, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          timeout: 3000, // Explicit timeout for this request
+        });
+      } catch (error) {
+        // Enhance error message for StartPayment
+        if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT' || error.code === 'ENOTFOUND' || error.message.includes('timeout')) {
+          const errorMsg = `Cannot connect to Cashmatic device at ${baseUrl} to start payment. Please check if the device is powered on and connected to the network.`;
+          console.error(errorMsg, error.message);
+          throw new Error(errorMsg);
+        } else if (error.response) {
+          throw new Error(`Failed to start Cashmatic payment: ${error.response.status} ${error.response.statusText || error.message}`);
+        }
+        throw error;
+      }
+      console.log("api/transaction/startPayment", body, " Base URL : ", baseUrl, " Token : ", token);
+      const sessionId = generateSessionId();
+      this.sessions.set(sessionId, {
+        token,
+        amount: amountInCents,
+        state: 'IN_PROGRESS',
+        createdAt: Date.now(),
+        insertedAmount: 0,
+        dispensedAmount: 0,
+        notDispensedAmount: 0,
+        dispensedAmountCached: false,
+        notDispensedAmountCached: false,
+      });
+      console.log("Session Id", sessionId);
+      return { success: true, sessionId };
+    } catch (error) {
+      console.error('Cashmatic createSession error:', error);
+      return { success: false, message: error.message };
+    }
+  }
+
+  async testConnection() {
+    try {
+      await this.login();
+      return { success: true, message: 'Connection successful' };
+    } catch (error) {
+      return { success: false, message: error.message };
+    }
+  }
+
+  async getSessionStatus(sessionId) {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return {
+        success: false,
+        state: 'ERROR',
+        message: 'Session not found'
+      };
+    }
+
+    const client = this.getHttpClient();
+    const baseUrl = this.getBaseUrl();
+
+    try {
+      const res = await client.post(
+        `${baseUrl}/api/device/ActiveTransaction`,
+        null,
+        {
+          headers: {
+            Authorization: `Bearer ${session.token}`,
+          },
+        }
+      );
+
+      const body = res.data || {};
+      const data = body.data || body;
+      const operation = (data.operation || body.operation || '').toString().toUpperCase();
+      
+      const requestedRaw = typeof data.requested !== 'undefined' ? data.requested : session.amount;
+      const insertedRaw = typeof data.inserted !== 'undefined' ? data.inserted : 0;
+      let requested = Number(requestedRaw) || session.amount;
+      let inserted = Number(insertedRaw) || 0;
+
+      const dispensed = Number(data.dispensed || data.dispensedAmount || data.paymentDispensed || 0);
+      const notDispensed = Number(data.notDispensed || data.notDispensedAmount || data.paymentNotDispensed || 0);
+
+      if (requested > 0) session.amount = requested;
+      if (inserted > 0) session.insertedAmount = inserted;
+      if (dispensed > 0) session.dispensedAmount = dispensed;
+      if (notDispensed > 0) session.notDispensedAmount = notDispensed;
+
+      let state = session.state || 'IN_PROGRESS';
+      if (operation && operation !== 'IDLE') {
+        if (requested > 0 && inserted >= requested) {
+          state = 'PAID';
+        } else {
+          state = 'IN_PROGRESS';
+        }
+      } else {
+        if (requested > 0 && inserted >= requested) {
+          state = notDispensed > 0 ? 'FINISHED_MANUAL' : 'FINISHED';
+        } else if (inserted < requested) {
+          state = 'CANCELLED';
+        } else {
+          state = notDispensed > 0 ? 'FINISHED_MANUAL' : 'FINISHED';
+        }
+      }
+
+      session.state = state;
+      this.sessions.set(sessionId, session);
+
+      return {
+        success: true,
+        state,
+        requestedAmount: requested || session.amount || 0,
+        insertedAmount: inserted || session.insertedAmount || 0,
+        dispensedAmount: session.dispensedAmount || 0,
+        notDispensedAmount: session.notDispensedAmount || 0,
+      };
+    } catch (err) {
+      console.error('Cashmatic getSessionStatus error:', err.message || err);
+      return {
+        success: false,
+        state: 'ERROR',
+        requestedAmount: session.amount,
+        insertedAmount: session.insertedAmount || 0,
+        dispensedAmount: session.dispensedAmount || 0,
+        notDispensedAmount: session.notDispensedAmount || 0,
+        message: 'Error communicating with Cashmatic: ' + (err.message || 'Unknown error'),
+      };
+    }
+  }
+
+  async cancelSession(sessionId) {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return {
+        success: false,
+        state: 'ERROR',
+        message: 'Session not found'
+      };
+    }
+
+    const client = this.getHttpClient();
+    const baseUrl = this.getBaseUrl();
+
+    try {
+      await client.post(
+        `${baseUrl}/api/transaction/CancelPayment`,
+        null,
+        {
+          headers: {
+            Authorization: `Bearer ${session.token}`,
+          },
+        }
+      );
+    } catch (err) {
+      console.error('Cashmatic cancelSession error:', err.message || err);
+    }
+
+    session.state = 'CANCELLED';
+    this.sessions.set(sessionId, session);
+
+    return {
+      success: true,
+      state: 'CANCELLED',
+    };
+  }
+}
+
+// Factory function to create CashmaticService instance from terminal config
+function createCashmaticService(terminal) {
+  if (!terminal) {
+    throw new Error('Terminal configuration is required');
+  }
+
+  if (!terminal.connection_string) {
+    console.warn('Terminal connection_string is missing, using defaults');
+    // Use defaults if connection_string is missing
+    return new CashmaticServiceInstance({
+      ip: '192.168.1.58',
+      username: 'cp',
+      password: '1235',
+    });
+  }
+
+  // Parse connection_string
+  let config = {};
+  try {
+    const connectionString = terminal.connection_string;
+    
+    if (typeof connectionString === 'string') {
+      try {
+        config = JSON.parse(connectionString);
+      } catch (e) {
+        // If not JSON, try to parse TCP format
+        if (connectionString && connectionString.startsWith('tcp://')) {
+          const match = connectionString.match(/tcp:\/\/([^:]+):?(\d+)?/);
+          if (match) {
+            config = { ip: match[1], port: match[2] || '' };
+          }
+        } else if (connectionString.trim() !== '') {
+          // If it's a non-empty string but not JSON or TCP format, try to use it as IP
+          config = { ip: connectionString.trim() };
+        }
+      }
+    } else if (connectionString && typeof connectionString === 'object') {
+      config = connectionString;
+    }
+
+    // Extract fields with multiple name variations (case-insensitive)
+    const getConfigValue = (...keys) => {
+      for (const key of keys) {
+        if (config[key] !== undefined && config[key] !== null && config[key] !== '') {
+          return String(config[key]).trim();
+        }
+        const lowerKey = key.toLowerCase();
+        for (const configKey in config) {
+          if (configKey.toLowerCase() === lowerKey && config[configKey] !== undefined && config[configKey] !== null && config[configKey] !== '') {
+            return String(config[configKey]).trim();
+          }
+        }
+      }
+      return '';
+    };
+
+    const serviceConfig = {
+      ip: getConfigValue('ip', 'ipAddress', 'ip_address', 'IP', 'IPAddress') || '192.168.1.58',
+      username: getConfigValue('username', 'userName', 'user_name', 'Username', 'USERNAME') || 'cp',
+      password: getConfigValue('password', 'Password', 'PASSWORD') || '1235',
+    };
+
+    console.log('Creating CashmaticService with config:', { ...serviceConfig, password: '***' });
+    return new CashmaticServiceInstance(serviceConfig);
+  } catch (error) {
+    console.error('Error parsing terminal connection_string:', error, 'Terminal:', terminal);
+    // Return a service with defaults instead of throwing
+    console.warn('Using default configuration due to parsing error');
+    return new CashmaticServiceInstance({
+      ip: '192.168.1.58',
+      username: 'cp',
+      password: '1235',
+    });
+  }
+}
+
+// Legacy singleton instance for backward compatibility
+const cashmaticService = new CashmaticServiceInstance();
+
 module.exports = CashmaticService;
+module.exports.CashmaticServiceInstance = CashmaticServiceInstance;
+module.exports.createCashmaticService = createCashmaticService;
+module.exports.cashmaticService = cashmaticService;

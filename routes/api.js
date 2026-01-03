@@ -153,6 +153,7 @@ router.post('/printers', PrinterController.createPrinter);
 router.put('/printers/:id', PrinterController.updatePrinter);
 router.delete('/printers/:id', PrinterController.deletePrinter);
 router.post('/printers/:id/test', PrinterController.testPrinter);
+router.post('/printers/print-receipt', PrinterController.printReceipt);
 
 // Cashmatic routes
 router.post('/cashmatic/start', PaymentController.processCashmaticPayment);

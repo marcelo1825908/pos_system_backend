@@ -4,12 +4,12 @@ const MemberController = {
   getAllMembers: async (req, res) => {
     try {
       const members = await Member.getAll();
-      // Ensure we always return an array
-      res.json(Array.isArray(members) ? members : []);
+      // Ensure we always return an array and wrap in consistent structure
+      const membersArray = Array.isArray(members) ? members : [];
+      res.json({ data: membersArray });
     } catch (error) {
       console.error('Get all members error:', error);
-      // Return empty array on error instead of error object
-      res.json([]);
+      res.status(500).json({ error: 'Failed to fetch members', message: error.message });
     }
   },
 
@@ -38,12 +38,13 @@ const MemberController = {
     try {
       const { q } = req.query;
       if (!q) {
-        return res.json([]);
+        return res.json({ data: [] });
       }
       const members = await Member.search(q);
-      res.json(members);
+      res.json({ data: members });
     } catch (error) {
-      res.status(500).json({ error: error.message });
+      console.error('Search members error:', error);
+      res.status(500).json({ error: 'Failed to search members', message: error.message });
     }
   },
 

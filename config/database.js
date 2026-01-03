@@ -1,7 +1,7 @@
 // Load environment variables from .env file
-// Look for .env in project root (two levels up from packages/server/config)
+// Look for .env in project root (two levels up from server/config)
 const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '../../../.env') });
+require('dotenv').config({ path: path.join(__dirname, '../../.env') });
 
 const { Pool } = require('pg');
 

@@ -23,7 +23,7 @@ async function createEnvFile() {
   console.log('📝 PostgreSQL Configuration Setup\n');
   console.log('This script will help you create a .env file with your PostgreSQL credentials.\n');
 
-  const envPath = path.join(__dirname, '..', '..', '.env');
+  const envPath = path.join(__dirname, '..', '.env');
   
   // Check if .env already exists
   if (fs.existsSync(envPath)) {

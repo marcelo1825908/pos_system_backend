@@ -22,8 +22,8 @@ class Member {
   }
 
   static async getNextMemberId() {
-    // Get the highest member_id
-    const sql = `SELECT member_id FROM members WHERE member_id IS NOT NULL ORDER BY CAST(member_id AS INTEGER) DESC LIMIT 1`;
+    // Get the highest numeric member_id (filter out non-numeric values)
+    const sql = `SELECT member_id FROM members WHERE member_id IS NOT NULL AND member_id ~ '^[0-9]+$' ORDER BY CAST(member_id AS INTEGER) DESC LIMIT 1`;
     const result = await db.get(sql);
     
     if (!result || !result.member_id) {
@@ -32,6 +32,9 @@ class Member {
     
     // Increment the member_id
     const currentId = parseInt(result.member_id, 10);
+    if (isNaN(currentId)) {
+      return '0001'; // If somehow not numeric, start from 0001
+    }
     const nextId = currentId + 1;
     return String(nextId).padStart(4, '0');
   }
@@ -48,8 +51,8 @@ class Member {
       RETURNING id
     `;
     const result = await db.run(sql, [member_id, full_name, phone, email, address]);
-    // PostgreSQL returns id in lastInsertRowid when using RETURNING
-    const newId = result.lastInsertRowid;
+    // PostgreSQL returns id in result.rows[0].id when using RETURNING
+    const newId = result.rows && result.rows[0] ? result.rows[0].id : result.id || result.lastInsertRowid;
     if (!newId) {
       throw new Error('Failed to create member: no ID returned');
     }

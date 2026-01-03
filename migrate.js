@@ -1,7 +1,7 @@
 // Load environment variables from .env file
-// Look for .env in project root (two levels up from packages/server)
+// Look for .env in project root (one level up from server)
 const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '../../.env') });
+require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
 const db = require('./config/database');
 const { Pool } = require('pg');
@@ -184,7 +184,7 @@ if (require.main === module) {
       if (error.code === '28P01') {
         console.error('\n❌ PostgreSQL Authentication Failed');
         console.error('\nTo fix this:');
-        console.error('1. Create a .env file in the project root (f:\\shgfhdfh\\pos-desktop-app\\.env)');
+        console.error(`1. Create a .env file in the project root (${path.join(__dirname, '../.env')})`);
         console.error('2. Add your PostgreSQL credentials:');
         console.error('   DB_HOST=localhost');
         console.error('   DB_PORT=5432');

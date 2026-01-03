@@ -3,7 +3,15 @@ const db = require('../config/database');
 class MemberFee {
   static async getAll() {
     const sql = 'SELECT * FROM member_fees ORDER BY id ASC';
-    return await db.all(sql);
+    const result = await db.all(sql);
+    console.log('🔍 MemberFee.getAll() - SQL:', sql);
+    console.log('🔍 MemberFee.getAll() - result:', JSON.stringify(result, null, 2));
+    console.log('🔍 MemberFee.getAll() - result type:', typeof result, 'isArray:', Array.isArray(result));
+    if (Array.isArray(result) && result.length > 0) {
+      console.log('🔍 MemberFee.getAll() - first row:', JSON.stringify(result[0], null, 2));
+      console.log('🔍 MemberFee.getAll() - first row keys:', Object.keys(result[0]));
+    }
+    return result;
   }
 
   static async getById(id) {

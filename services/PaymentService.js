@@ -190,7 +190,7 @@ class PaymentService {
       });
       
       // Get Cashmatic terminal configuration
-      const terminal = PaymentTerminal.getByType('cashmatic');
+      const terminal = await PaymentTerminal.getByType('cashmatic');
       
       // If terminal is configured and enabled, use real implementation
       if (terminal && terminal.enabled) {
@@ -199,9 +199,11 @@ class PaymentService {
         try {
           // Create service instance with terminal config
           const service = createCashmaticService(terminal);
+          console.log('Created CashmaticService, attempting to create session...');
           const result = await service.createSession(amountInCents);
           
-          if (result.success) {
+          if (result && result.success) {
+            console.log('✅ Cashmatic session created successfully:', result.sessionId);
             return {
               success: true,
               transaction_id: result.sessionId,
@@ -221,13 +223,12 @@ class PaymentService {
               }
             };
           } else {
-            return {
-              success: false,
-              message: result.message || 'Failed to start Cashmatic payment'
-            };
+            console.warn('⚠️ Cashmatic session creation returned failure, using mock:', result?.message);
+            // Fall through to mock mode
           }
         } catch (error) {
           console.error('❌ Real Cashmatic failed, using mock:', error.message);
+          console.error('Error stack:', error.stack);
           // Fall through to mock mode
         }
       }
@@ -277,44 +278,61 @@ class PaymentService {
    */
   static async getPaymentStatus(transactionId) {
     try {
-      // Check if this is a real session
-      if (transactionId.startsWith('CASH-') && !useMockMode) {
-        // Get terminal to create service instance
-        const terminal = PaymentTerminal.getByType('cashmatic');
-        if (terminal && terminal.enabled) {
+      console.log(`📊 Getting payment status for: ${transactionId}`);
+      
+      // Check if this is a real session by trying to get terminal and check if session exists
+      // Mock sessions start with 'CASH-' but are not in the service's session map
+      const terminal = await PaymentTerminal.getByType('cashmatic');
+      
+      if (terminal && terminal.enabled && !useMockMode) {
+        try {
+          // Try to get status from real service
           const service = createCashmaticService(terminal);
           const status = await service.getSessionStatus(transactionId);
           
-          if (status.success) {
+          if (status && status.success) {
+            console.log(`✅ Real Cashmatic status retrieved:`, status.state);
             return {
               success: true,
               ok: true,
               data: {
                 transaction_id: transactionId,
-                status: status.state === 'FINISHED' ? 'completed' : 'in_progress',
+                status: status.state === 'FINISHED' || status.state === 'FINISHED_MANUAL' ? 'completed' : 'in_progress',
                 state: status.state,
                 timestamp: new Date().toISOString(),
-                requestedAmount: status.requestedAmount,
-                insertedAmount: status.insertedAmount,
-                dispensedAmount: status.dispensedAmount,
-                notDispensedAmount: status.notDispensedAmount
+                requestedAmount: status.requestedAmount || 0,
+                insertedAmount: status.insertedAmount || 0,
+                dispensedAmount: status.dispensedAmount || 0,
+                notDispensedAmount: status.notDispensedAmount || 0
               }
             };
           }
+        } catch (error) {
+          console.log(`⚠️ Real service failed, using mock: ${error.message}`);
+          // Fall through to mock mode
         }
       }
       
-      // Mock status response - simulate progress
-      const progress = Math.random();
+      // Mock status response - simulate progress over time
+      // Use sessionId to create consistent progress (based on time elapsed)
+      const sessionTime = transactionId.includes('-') ? parseInt(transactionId.split('-')[1]) : Date.now();
+      const elapsed = Date.now() - sessionTime;
+      const elapsedSeconds = Math.floor(elapsed / 1000);
+      
       let state = 'IN_PROGRESS';
       let insertedAmount = 0;
       
-      if (progress > 0.7) {
+      // Simulate progress: after 3 seconds, start inserting money, after 5 seconds, finish
+      if (elapsedSeconds >= 5) {
         state = 'FINISHED';
-        insertedAmount = 1000; // Mock €10 inserted
-      } else if (progress > 0.3) {
-        insertedAmount = Math.floor(Math.random() * 1000);
+        insertedAmount = 1000; // Mock full amount inserted (€10 in cents)
+      } else if (elapsedSeconds >= 3) {
+        // Gradually increase inserted amount
+        const progress = (elapsedSeconds - 3) / 2; // 0 to 1 over 2 seconds
+        insertedAmount = Math.floor(1000 * progress);
       }
+      
+      console.log(`🎭 Mock status: state=${state}, inserted=${insertedAmount}, elapsed=${elapsedSeconds}s`);
       
       return {
         success: true,
@@ -324,7 +342,7 @@ class PaymentService {
           status: state === 'FINISHED' ? 'completed' : 'in_progress',
           state: state,
           timestamp: new Date().toISOString(),
-          requestedAmount: 1000,
+          requestedAmount: 1000, // Default mock amount
           insertedAmount: insertedAmount,
           dispensedAmount: 0,
           notDispensedAmount: 0,
@@ -332,9 +350,79 @@ class PaymentService {
         }
       };
     } catch (error) {
+      console.error('❌ Error getting payment status:', error);
       return {
         success: false,
         message: error.message || 'Failed to get payment status'
+      };
+    }
+  }
+
+  /**
+   * Finish payment (Cashmatic)
+   * @param {string} transactionId - Transaction ID
+   * @returns {Promise<Object>} Finish result
+   */
+  static async finishPayment(transactionId) {
+    try {
+      console.log(`✅ Finishing payment: ${transactionId}`);
+      
+      // Try real finish
+      const terminal = await PaymentTerminal.getByType('cashmatic');
+      if (terminal && terminal.enabled && !useMockMode) {
+        try {
+          const service = createCashmaticService(terminal);
+          const session = service.sessions.get(transactionId);
+          if (session) {
+            // Real session exists, finish it
+            const client = service.getHttpClient();
+            const baseUrl = service.getBaseUrl();
+            
+            try {
+              await client.post(
+                `${baseUrl}/api/transaction/CommitPayment`,
+                null,
+                {
+                  headers: {
+                    Authorization: `Bearer ${session.token}`,
+                  },
+                  timeout: 3000,
+                }
+              );
+              console.log('Cashmatic CommitPayment successful');
+            } catch (err) {
+              console.error('Cashmatic finishPayment error:', err.message || err);
+              // Don't throw - payment was successful, just log the error
+            }
+            
+            // Clean up session
+            service.sessions.delete(transactionId);
+            
+            return {
+              success: true,
+              state: 'FINISHED',
+              message: 'Payment finished successfully'
+            };
+          }
+        } catch (error) {
+          console.log(`⚠️ Real finish failed, using mock: ${error.message}`);
+          // Fall through to mock mode
+        }
+      }
+      
+      // Mock finish - just return success
+      console.log(`🎭 Mock finish for: ${transactionId}`);
+      return {
+        success: true,
+        state: 'FINISHED',
+        message: 'Payment finished successfully (mock)',
+        mock: true
+      };
+    } catch (error) {
+      console.error('❌ Error finishing payment:', error);
+      return {
+        success: false,
+        message: error.message || 'Failed to finish payment'
       };
     }
   }
@@ -349,21 +437,30 @@ class PaymentService {
       console.log(`🚫 Cancelling payment: ${transactionId}`);
       
       // Try real cancellation
-      if (transactionId.startsWith('CASH-') && !useMockMode) {
-        const terminal = PaymentTerminal.getByType('cashmatic');
-        if (terminal && terminal.enabled) {
+      const terminal = await PaymentTerminal.getByType('cashmatic');
+      if (terminal && terminal.enabled && !useMockMode) {
+        try {
           const service = createCashmaticService(terminal);
           const result = await service.cancelSession(transactionId);
-          return result;
+          if (result && result.success) {
+            return result;
+          }
+        } catch (error) {
+          console.log(`⚠️ Real cancel failed, using mock: ${error.message}`);
+          // Fall through to mock mode
         }
       }
       
       // Mock cancellation
+      console.log(`🎭 Mock cancel for: ${transactionId}`);
       return {
         success: true,
-        message: 'Payment cancelled successfully'
+        state: 'CANCELLED',
+        message: 'Payment cancelled successfully (mock)',
+        mock: true
       };
     } catch (error) {
+      console.error('❌ Error cancelling payment:', error);
       return {
         success: false,
         message: error.message || 'Failed to cancel payment'

@@ -1,7 +1,7 @@
 // Load environment variables from .env file
-// Look for .env in project root (two levels up from packages/server)
+// Look for .env in project root (one level up from server)
 const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '../../.env') });
+require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
 // Handle unhandled promise rejections to prevent crashes
 process.on('unhandledRejection', (error) => {

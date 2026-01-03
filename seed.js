@@ -1,7 +1,7 @@
 // Combined seed script - runs all seeders
 // Load environment variables from .env file
 const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '../../.env') });
+require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
 async function runAllSeeds() {
   console.log('🌱 Starting database seeding...\n');

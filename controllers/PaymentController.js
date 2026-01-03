@@ -13,22 +13,55 @@ const PaymentController = {
   // CASHMATIC
   // -------------------------
   processCashmaticPayment: async (req, res) => {
-    console.log("enter.....");
+    console.log("enter processCashmaticPayment.....");
 
     try {
       const { amount } = req.body;
       if (!amount || amount <= 0) {
-        return res.status(400).json({ error: 'amount should be greater then ' });
+        return res.status(400).json({ error: 'amount should be greater than 0' });
       }
-      console.log("Sending to Cashmatic to start payment and sent the amount");
+      console.log("Processing Cashmatic payment with amount:", amount);
 
-      const session = await CashmaticService.startPayment(amount);
-      console.log("Session is : ", session);
+      // Use PaymentService which handles terminal configuration from database
+      const result = await PaymentService.processCashmaticPayment({
+        amount: amount,
+        member_id: req.body.member_id || null,
+        payment_type: req.body.payment_type || null,
+        reference: req.body.reference || `POS-${Date.now()}`,
+      });
 
-      return res.json({ data: session });
+      if (result.success) {
+        return res.json({ data: { sessionId: result.sessionId || result.transaction_id } });
+      } else {
+        return res.status(500).json({ 
+          error: result.message || 'Failed to start Cashmatic payment'
+        });
+      }
     } catch (error) {
       console.error('Cashmatic startPayment error:', error);
-      return res.status(500).json({ error: 'Internal server error' });
+      
+      // Provide more specific error messages
+      let errorMessage = 'Internal server error';
+      let statusCode = 500;
+      
+      if (error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT' || error.code === 'ENOTFOUND') {
+        errorMessage = 'Cannot connect to Cashmatic device. Please check if the device is powered on and connected to the network.';
+        statusCode = 503; // Service Unavailable
+      } else if (error.code === 'ECONNRESET') {
+        errorMessage = 'Connection to Cashmatic device was reset. Please try again.';
+        statusCode = 503;
+      } else if (error.response) {
+        // HTTP error response from Cashmatic device
+        errorMessage = `Cashmatic device error: ${error.response.status} - ${error.response.statusText || error.message}`;
+        statusCode = 502; // Bad Gateway
+      } else if (error.message) {
+        errorMessage = `Cashmatic error: ${error.message}`;
+      }
+      
+      return res.status(statusCode).json({ 
+        error: errorMessage,
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
     }
   },
 
@@ -37,19 +70,20 @@ const PaymentController = {
       const { sessionId } = req.params;
       console.log("Getting payment status for sessionId:", sessionId);
 
-      const result = await CashmaticService.getStatus(sessionId);
+      // Use PaymentService which handles both real and mock sessions
+      const result = await PaymentService.getPaymentStatus(sessionId);
       console.log("Status result:", result);
 
-      if (!result) {
+      if (!result || !result.success) {
         return res.status(404).json({
           success: false,
-          error: 'Session not found'
+          error: result?.message || 'Session not found'
         });
       }
 
       res.json({
         success: true,
-        data: result
+        data: result.data || result
       });
     } catch (error) {
       console.error('Get payment status error:', error);
@@ -62,17 +96,16 @@ const PaymentController = {
 
   finishCashmaticPayment: async (req, res) => {
     try {
-      console.log("In side finish Cashmatic Payemnt machine ", req, res);
-
       const { sessionId } = req.params;
       console.log("Finishing Cashmatic payment for sessionId:", sessionId);
 
-      const result = await CashmaticService.finishPayment(sessionId);
+      // Use PaymentService which handles both real and mock sessions
+      const result = await PaymentService.finishPayment(sessionId);
 
-      if (!result) {
+      if (!result || !result.success) {
         return res.status(404).json({
           success: false,
-          error: 'Session not found'
+          error: result?.message || 'Session not found'
         });
       }
 
@@ -94,12 +127,13 @@ const PaymentController = {
       const { sessionId } = req.params;
       console.log("Cancelling Cashmatic payment for sessionId:", sessionId);
 
-      const result = await CashmaticService.cancelPayment(sessionId);
+      // Use PaymentService which handles both real and mock sessions
+      const result = await PaymentService.cancelPayment(sessionId);
 
-      if (!result) {
+      if (!result || !result.success) {
         return res.status(404).json({
           success: false,
-          error: 'Session not found'
+          error: result?.message || 'Session not found'
         });
       }
 

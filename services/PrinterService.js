@@ -313,9 +313,14 @@ class PrinterService {
         printer.println(`Member: ${orderData.member_name}`);
       }
 
+      // Print payment type if available (for mosque payments)
+      if (orderData.payment_type) {
+        printer.println(`Payment Type: ${orderData.payment_type}`);
+      }
+
       // Print payment method if available (for mosque payments)
       if (orderData.payment_method) {
-        printer.println(`Payment: ${orderData.payment_method}`);
+        printer.println(`Payment Method: ${orderData.payment_method}`);
       }
 
       if (tableInfo) {

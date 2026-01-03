@@ -1,7 +1,7 @@
 // Load environment variables
-// Look for .env in project root (two levels up from packages/server)
+// Look for .env in project root (one level up from server)
 const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '../../.env') });
+require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
 const fs = require('fs');
 const db = require('./config/database');
