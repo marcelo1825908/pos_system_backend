@@ -12,8 +12,14 @@ class PaymentTerminal {
   }
 
   static async getByType(type) {
-    const sql = 'SELECT * FROM payment_terminals WHERE type = $1 AND enabled = 1';
-    return await db.get(sql, [type]);
+    // Check for both integer 1 and boolean true
+    const sql = 'SELECT * FROM payment_terminals WHERE type = $1 AND (enabled = 1 OR enabled = true)';
+    const result = await db.get(sql, [type]);
+    // Normalize enabled to boolean for consistency
+    if (result) {
+      result.enabled = result.enabled === 1 || result.enabled === true || result.enabled === '1';
+    }
+    return result;
   }
 
   static async create(data) {

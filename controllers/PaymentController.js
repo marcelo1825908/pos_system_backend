@@ -70,7 +70,7 @@ const PaymentController = {
       const { sessionId } = req.params;
       console.log("Getting payment status for sessionId:", sessionId);
 
-      // Use PaymentService which handles both real and mock sessions
+      // Use PaymentService to get payment status
       const result = await PaymentService.getPaymentStatus(sessionId);
       console.log("Status result:", result);
 
@@ -99,7 +99,7 @@ const PaymentController = {
       const { sessionId } = req.params;
       console.log("Finishing Cashmatic payment for sessionId:", sessionId);
 
-      // Use PaymentService which handles both real and mock sessions
+      // Use PaymentService to finish payment
       const result = await PaymentService.finishPayment(sessionId);
 
       if (!result || !result.success) {
@@ -127,7 +127,7 @@ const PaymentController = {
       const { sessionId } = req.params;
       console.log("Cancelling Cashmatic payment for sessionId:", sessionId);
 
-      // Use PaymentService which handles both real and mock sessions
+      // Use PaymentService to cancel payment
       const result = await PaymentService.cancelPayment(sessionId);
 
       if (!result || !result.success) {

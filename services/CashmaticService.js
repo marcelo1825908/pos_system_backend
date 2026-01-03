@@ -517,11 +517,16 @@ class CashmaticService {
   }
 }
 
+// Shared sessions map across all instances (keyed by sessionId)
+// This ensures sessions persist even when new service instances are created
+const sharedSessions = new Map();
+
 // Instance-based service for dynamic terminal configuration
 class CashmaticServiceInstance {
   constructor(config) {
     this.config = config || {};
-    this.sessions = new Map();
+    // Use shared sessions map so sessions persist across instance creation
+    this.sessions = sharedSessions;
   }
 
   getConfiguredIp() {
